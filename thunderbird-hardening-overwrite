@@ -1,0 +1,325 @@
+#!/bin/bash
+
+############### Thunderbird hardening override settings ###############
+
+#
+# based on https://github.com/HorlogeSkynet/thunderbird-user.js
+#
+# The Thunderbird hardening config is a bit overkill, this set of changes should make it work normally
+#
+# These overrides keep the Chat functionality disabled,
+# if you use that, comment out lines 1530-1553 in the user.js
+#
+# Place this script in your profile folder:
+#
+# native install:	~/.thunderbird/
+# Flatpak:	~/.var/app/org.mozilla.Thunderbird/.thunderbird/
+#
+# Warning: the profile folders also use the system language for the naming, making this even worse to configure
+#
+# Thunderbird and Firefox use the "default-release" folder, the "default" one is not used.
+
+# TODO
+# upstream all additions to the user.js
+# maybe maybe convince the maintainer to use a modular approach
+
+
+
+
+
+
+
+
+
+
+
+####### TEST IF CORRECTLY PLACED ##########
+# this is pretty rough but should work if not actively tricked
+
+# test if current path contains the folder names
+# CHANGEME if some strange TB fork comes out
+if echo $PWD | grep -e ".thunderbird" -e ".betterbird" ; then
+	echo "Script placed correctly"
+else
+	notify-send -t 0 -a "Thunderbird Hardening" "Error" "Script not placed in the correct location,\nsee https://github.com/boredsquirrel/Thunderbird-hardening-automation" &&\
+	exit
+fi
+
+
+
+
+
+
+
+
+
+
+
+######### CREATE AUTOSTART ENTRY ###############
+# Only tested on KDE, help wanted
+# Autostart scripts are strange and dont work, so this is used instead
+
+# if the file doesnt exit
+[ ! -f ~/.config/autostart/thunderbird-hardening.desktop ] &&\
+
+cat > ~/.config/autostart/thunderbird-hardening.desktop <<EOF
+[Desktop Entry]
+Name=Run the Thunderbird hardening overwrite script
+Type=Application
+Exec=sleep 10 && . $PWD/thunderbird-hardening-overwrite
+EOF
+
+chmod +x ~/.config/autostart/thunderbird-hardening.desktop
+
+
+
+
+
+
+
+
+
+
+
+######### USER JS UPDATER ###########
+echo "Updating the user.js..."
+
+tries=0
+
+# try to download for 1 hour, repeat every 2 minutes if failed
+while [ $tries -lt 30]; do
+	curl https://raw.githubusercontent.com/HorlogeSkynet/thunderbird-user.js/master/user.js | tee > user.js && break
+	tries=$((tries+1))
+	sleep 120
+done
+
+# if it failed for too long, give an error
+if [ $tries -eq 30 ]; then
+	notify-send -a "Thunderbird Hardening" "Download Timeout" "Downloading the script failed, too many tries"
+fi
+
+
+
+
+
+
+
+
+
+
+
+######### MAKE ADDONS WORK##########
+# https://github.com/HorlogeSkynet/thunderbird-user.js/wiki/4.1-Extensions#installing-extensions-from-amo-atn
+# javascript.enabled true
+# privacy.resistFingerprinting.block_mozAddonManager false
+# privacy.resistFingerprinting.exemptedDomains https://addons.thunderbird.net
+sed -i 's/javascript.enabled", false)/javascript.enabled", false)/g' user.js
+sed -i 's/privacy.resistFingerprinting.block_mozAddonManager", true)/privacy.resistFingerprinting.block_mozAddonManager", false)/g' user.js
+echo 'user_pref("privacy.resistFingerprinting.exemptedDomains", "https://addons.thunderbird.net");' >> user.js
+
+
+
+
+
+
+
+
+
+
+
+######### MAIL AUTOCONFIG ###########
+# https://privacy-handbuch.de/handbuch_31m.htm
+
+sed -i 's/mailnews.auto_config.guess.enabled", false/mailnews.auto_config.guess.enabled", true/g' user.js
+sed -i 's/auto_config.fetchFromExchange.enabled", false/auto_config.fetchFromExchange.enabled", true/g' user.js
+echo "user_pref("mailnews.auto_config.fetchFromISP.sslOnly", true);" >> user.js
+echo "user_pref("mailnews.auto_config.fetchFromExchange.sslOnly", true);" >> user.js
+echo "user_pref("mailnews.auto_config.guess.sslOnly", true)" >> user.js       # sets fetch and guesses to SSL only
+
+
+
+
+
+
+
+
+
+
+
+##### REPLACE BOOLEAN VALUES #######
+# This searches for a unique part of the setting and replaces the boolean value.
+# I found no better way to do this, while not relying on exact line numbers, which may change
+# the core command is:
+# sed -i 's/FIND/REPLACE/g' user.js
+
+echo "Replacing boolean values (true/false) and settings..."
+
+# show normal date and location for normal conversations
+sed -i 's/sanitize_date_header", true/sanitize_date_header", false/g' user.js
+sed -i 's/browser.region.update.enabled", false/browser.region.update.enabled", true/g' user.js
+sed -i 's/geo.provider.ms-windows-location", false/geo.provider.ms-windows-location", true/g' user.js # Windows
+sed -i 's/geo.provider.use_corelocation", false/geo.provider.use_corelocation", true/g' user.js # Mac
+sed -i 's/geo.provider.use_gpsd", false/geo.provider.use_gpsd", true/g' user.js # Linux
+sed -i 's/geo.enabled", false/geo.enabled", true/g' user.js
+sed -i 's/user_pref("mail.sanitize_date_header", true/user_pref("mail.sanitize_date_header", false/g' user.js
+
+# for non en-US speakers: disable the use of english only
+sed -i 's/javascript.use_us_english_locale", true/javascript.use_us_english_locale", false/g' user.js #Hidden pref
+
+# enable the Thunderbird startup page with news etc.
+sed -i 's/mailnews.start_page.enabled", false/mailnews.start_page.enabled", true/g' user.js
+
+# re-enable accessibility!
+# maybe on Windows and MacOS when you are not disabled
+sed -i 's/accessibility.force_disabled", 1/accessibility.force_disabled", 0/g' user.js
+
+# re-enable PDF, SVG and advanced font rendering
+# sed -i 's/pdfjs.disabled", true/pdfjs.disabled", false/g' user.js
+sed -i 's/svg.disabled", true/svg.disabled", false/g' user.js #sanitized HTML should deal with that
+sed -i 's/font_rendering.graphite.enabled", false/font_rendering.graphite.enabled", true/g' user.js
+
+# allow the OS to add Thunderbird downloads to "recent documents"
+sed -i 's/browser.download.manager.addToRecentDocs", false/browser.download.manager.addToRecentDocs", true/g' user.js
+
+# dont know what that is
+#sed -i 's/network.proxy.socks_remote_dns", true/network.proxy.socks_remote_dns", false/g' user.js
+
+sed -i 's/resume_from_crash", false/resume_from_crash", true/g' user.js
+
+#show just the name when contact is in your address book
+sed -i 's/showCondensedAddresses", false/showCondensedAddresses", true/g' user.js
+# show user agent
+sed -i 's/mailnews.headers.showUserAgent", false/mailnews.headers.showUserAgent", true/g' user.js
+
+# collect addresses of people you are contacting
+sed -i 's/mail.collect_email_address_outgoing", false/mail.collect_email_address_outgoing", true/g' user.js #useful
+
+# sending HTML, only used if the user actually writes in HTML, and breaks things in that case
+sed -i 's/user_pref("mail.html_compose", false/user_pref("mail.html_compose", true/g' user.js
+sed -i 's/mail.identity.default.compose_html", false/mail.identity.default.compose_html", true/g' user.js
+# send HTML if used, otherwise send plain text. nothing wrong here
+sed -i 's/mail.default_send_format", 1/mail.default_send_format", 0/g' user.js
+
+# make sure sanitized HTML is used
+#sed -i 's/mailnews.display.html_as", 0/mailnews.display.html_as", 3/g' user.js
+#sed -i 's/mailnews.display.html_as", 1/mailnews.display.html_as", 3/g' user.js
+
+# display HTML, inline images etc by choice
+sed -i 's/mailnews.display.disallow_mime_handlers", 3)/mailnews.display.disallow_mime_handlers", 0)/g' user.js
+
+# allow images to load
+# 1 all
+# 2 block all
+# 3 block third party
+#sed -i 's/permissions.default.image", 2/permissions.default.image", 3/g' user.js
+
+# allow extracting Calendar Events, useful feature
+sed -i 's/calendar.extract.service.enabled", false/calendar.extract.service.enabled", true/g' user.js
+
+
+
+
+
+
+
+
+
+
+
+####### DEACTIVATE UNNEEDED LINES #############
+# This works by searching for a line (needs to start with the start, here "user_pref") and placing "//" in front to disable it
+# having these lines means they will overwrite preferences which will stay there persistently
+# it also sometimes causes errors of setting a contant value, while the value should change.
+# Example: Version update info messages in Arkenfox are broken, as the version is fixed.
+
+echo "Deactivating unnecessary lines, that should not be forced..."
+
+
+# stuff that doesnt make sense in Thunderbird, only in Firefox
+sed -i 's/privacy.userContext.enabled", true/privacy.userContext.enabled", false/g' user.js #this makes no sense, deactivated but to be sure
+sed -i 's/privacy.userContext.ui.enabled", true/privacy.userContext.ui.enabled", false/g' user.js
+
+# browser size, not needed as you dont open websites
+sed -i 's/letterboxing", true/letterboxing", false/g' user.js
+sed -i '/user_pref("privacy.window.maxInnerWidth/s/^/\/\//' user.js
+sed -i '/user_pref("privacy.window.maxInnerHeight/s/^/\/\//' user.js
+
+# session, not used or these settings are causing problems
+sed -i 's/sanitizeOnShutdown", true/sanitizeOnShutdown", false/g' user.js
+sed -i '/user_pref("browser.cache.disk.enable", false);/s/^/\/\//' user.js
+sed -i '/user_pref("browser.sessionstore.interval/s/^/\/\//' user.js
+sed -i '/user_pref("privacy.clearOnShutdown.cache", true/s/^/\/\//' user.js
+sed -i '/user_pref("privacy.clearOnShutdown.downloads", true/s/^/\/\//' user.js
+sed -i '/user_pref("privacy.clearOnShutdown.sessions", true/s/^/\/\//' user.js
+
+
+# remove enforced languages
+sed -i '/user_pref("spellchecker.dictionary", "en-US");/s/^/\/\//' user.js
+sed -i '/user_pref("intl.accept_languages", "en-US, en");/s/^/\/\//' user.js
+
+# error reporting
+sed -i '/user_pref("breakpad.reportURL", ""/s/^/\/\//' user.js
+
+# cache
+sed -i '/user_pref("browser.cache.memory.enable", false/s/^/\/\//' user.js
+sed -i '/user_pref("browser.cache.memory.capacity", 0/s/^/\/\//' user.js
+sed -i '/user_pref("media.memory_cache_max_size/s/^/\/\//' user.js
+sed -i '/permissions.memory_only", true/s/^/\/\//' user.js
+sed -i '/user_pref("browser.cache.offline.enable", false/s/^/\/\//' user.js
+
+# Use and display normal dates, not UTC
+sed -i '/user_pref("mailnews.display.original_date", false/s/^/\/\//' user.js
+sed -i '/user_pref("mailnews.display.date_senders_timezone", false/s/^/\/\//' user.js
+sed -i '/user_pref("calendar.timezone.local", "UTC"/s/^/\/\//' user.js #this could mess things up sooo much
+
+# Language
+# dont force spellcheck
+sed -i '/user_pref("mail.SpellCheckBeforeSend"/s/^/\/\//' user.js
+
+# Use normal reply headers
+sed -i '/user_pref("mailnews.reply_header_type", 1/s/^/\/\//' user.js
+sed -i '/user_pref("mailnews.reply_header_authorwrotesingle/s/^/\/\//' user.js
+
+# probably not used
+sed -i '/user_pref("dom.caches.enabled", false/s/^/\/\//' user.js
+sed -i '/user_pref("extensions.enabledScopes", 5/s/^/\/\//' user.js
+sed -i '/user_pref("extensions.autoDisableScopes", 15/s/^/\/\//' user.js
+
+# Addon autoconfig?
+#sed -i '/user_pref("mailnews.auto_config.addons_url",""/s/^/\/\//' user.js
+
+# nice displayed info
+sed -i '/user_pref("browser.newtabpage.enabled", false/s/^/\/\//' user.js
+
+
+
+
+
+
+
+
+
+
+
+######## ADD ADDITIONAL CONFIGS ##########
+# Base command:
+# echo "user_pref("some_key","some_value");" >> user.js
+
+echo "Adding additional config lines..."
+
+# enable UserChrome customization
+echo "//enable UserChrome.css modifications" >> user.js
+echo "user_pref("legacyUserProfileCustomizations.stylesheets", true);" >> user.js
+
+
+
+
+
+
+
+
+
+
+
+####### COPY USER.JS TO PROFILE #######
+cp user.js *.*/
