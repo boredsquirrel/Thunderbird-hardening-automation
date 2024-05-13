@@ -323,3 +323,50 @@ echo "user_pref("legacyUserProfileCustomizations.stylesheets", true);" >> user.j
 
 ####### COPY USER.JS TO PROFILE #######
 cp user.js *.*/
+
+
+
+
+
+
+
+
+
+
+
+###### MAIL AUTOCONFIG ##############
+# https://www.awxcnx.de/handbuch_31m
+# Get mailprovider configurations locally
+# This is preferred over fetching them (you know, Thunderbird is actually a good program)
+# but by default there is no file for that
+
+echo "Downloading autoconfig archive"
+# try original source, may be updated
+curl --proto '=https' --tlsv1.2 --tlsv1.3 https://privacy-handbuch.de/download/mailprovider-db.tar.bz2 -o isp/mailprovider-db.tar.bz2 ||\
+# use my backup source
+curl --proto '=https' --tlsv1.2 --tlsv1.3 https://github.com/boredsquirrel/Thunderbird-hardening-automation/raw/main/mailprovider-db.tar.bz2 -P isp/mailprovider-db.tar.bz2 ||\
+# error
+notify-send "Thunderbird Hardening" "ERROR" "ISP Database could not be downloaded\nCheck $PWD/isp for contents"
+
+#unclear where this "isp" directory belongs, putting it directly to "isp" is just a guess
+# update interval also questionable
+
+# unpack the archive to the isp dir (creates it when not there)
+tar -xvf isp/mailprovider-db.tar.bz2 -C isp/ &&\
+# remove the archive (skipped, to verify if it is new)
+# rm -f isp/mailprovider-db.tar.bz2 &&\
+mv -f isp/mailprovider-db.tar.bz2 isp/mailprovider-db.tar.bz2.old
+
+# check if the database changed
+# true: no difference, false: difference
+/bin/sh -c 'diff isp/mailprovider-db.tar.bz2 isp/mailprovider-db.tar.bz2.old' &&\
+echo "The databases are equal" && rm -f mailprovider-db.tar.bz2 && notupdated=1 ||\
+notify-send -t 0 -a "Thunderbird Hardening" "Mailprovider Database Updated" "There were changes to the mail provider configurations.\n\n\nCheck $PWD/isp/ if you want to see them." &&\
+
+# move the contents from there (only specific files are used, increasing maintenance, possibly security)
+# TODO: add diff checker to only move new ones
+mv -f isp/mailprovider-db/*.xml isp/ &&\
+mv -f isp/mailprovider-db/*.br isp/ &&\
+mv -f isp/mailprovider-db/*.ar isp/ &&\
+# delete the directory
+rm -rf isp/mailprovider-db
