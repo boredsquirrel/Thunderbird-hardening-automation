@@ -20,60 +20,15 @@
 # Thunderbird and Firefox use the "default-release" folder, the "default" one is not used.
 
 # TODO
-# upstream all additions to the user.js
+# upstream some additions to the user.js
 # maybe maybe convince the maintainer to use a modular approach
+# (both are not very likely)
 
 
 
 
 
-
-
-
-
-
-
-####### TEST IF CORRECTLY PLACED ##########
-# this is pretty rough but should work if not actively tricked
-
-# test if current path contains the folder names
-# CHANGEME if some strange TB fork comes out
-if echo $PWD | grep -e ".thunderbird" -e ".betterbird" ; then
-	echo "Script placed correctly"
-else
-	notify-send -t 0 -a "Thunderbird Hardening" "Error" "Script not placed in the correct location,\nsee https://github.com/boredsquirrel/Thunderbird-hardening-automation" &&\
-	exit
-fi
-
-
-
-
-
-
-
-
-
-
-
-######### CREATE AUTOSTART ENTRY ###############
-# Only tested on KDE, help wanted
-# Autostart scripts are strange and dont work, so this is used instead
-
-# if the file doesnt exit
-[ ! -f ~/.config/autostart/thunderbird-hardening.desktop ] &&\
-
-cat > ~/.config/autostart/thunderbird-hardening.desktop <<EOF
-[Desktop Entry]
-Name=Run the Thunderbird hardening overwrite script
-Type=Application
-Exec=sleep 10 && . $PWD/thunderbird-hardening-overwrite
-EOF
-
-chmod +x ~/.config/autostart/thunderbird-hardening.desktop
-
-
-
-
+cd ~/.thunderbird
 
 
 
@@ -84,19 +39,21 @@ chmod +x ~/.config/autostart/thunderbird-hardening.desktop
 ######### USER JS UPDATER ###########
 echo "Updating the user.js..."
 
-tries=0
+curl https://raw.githubusercontent.com/HorlogeSkynet/thunderbird-user.js/master/user.js | tee > user.js
 
+# tries=0
+#
 # try to download for 1 hour, repeat every 2 minutes if failed
-while [ $tries -lt 30]; do
-	curl https://raw.githubusercontent.com/HorlogeSkynet/thunderbird-user.js/master/user.js | tee > user.js && break
-	tries=$((tries+1))
-	sleep 120
-done
-
-# if it failed for too long, give an error
-if [ $tries -eq 30 ]; then
-	notify-send -a "Thunderbird Hardening" "Download Timeout" "Downloading the script failed, too many tries"
-fi
+# while [ $tries -lt 30]; do
+# 	curl https://raw.githubusercontent.com/HorlogeSkynet/thunderbird-user.js/master/user.js | tee > user.js && break
+# 	tries=$((tries+1))
+# 	sleep 120
+# done
+#
+# # if it failed for too long, give an error
+# if [ $tries -eq 30 ]; then
+# 	notify-send -a "Thunderbird Hardening" "Download Timeout" "Downloading the script failed, too many tries"
+# fi
 
 
 
@@ -110,9 +67,6 @@ fi
 
 ######### MAKE ADDONS WORK##########
 # https://github.com/HorlogeSkynet/thunderbird-user.js/wiki/4.1-Extensions#installing-extensions-from-amo-atn
-# javascript.enabled true
-# privacy.resistFingerprinting.block_mozAddonManager false
-# privacy.resistFingerprinting.exemptedDomains https://addons.thunderbird.net
 sed -i 's/javascript.enabled", false)/javascript.enabled", false)/g' user.js
 sed -i 's/privacy.resistFingerprinting.block_mozAddonManager", true)/privacy.resistFingerprinting.block_mozAddonManager", false)/g' user.js
 echo 'user_pref("privacy.resistFingerprinting.exemptedDomains", "https://addons.thunderbird.net");' >> user.js
@@ -129,12 +83,8 @@ echo 'user_pref("privacy.resistFingerprinting.exemptedDomains", "https://addons.
 
 ######### MAIL AUTOCONFIG ###########
 # https://privacy-handbuch.de/handbuch_31m.htm
-
 sed -i 's/mailnews.auto_config.guess.enabled", false/mailnews.auto_config.guess.enabled", true/g' user.js
 sed -i 's/auto_config.fetchFromExchange.enabled", false/auto_config.fetchFromExchange.enabled", true/g' user.js
-echo "user_pref("mailnews.auto_config.fetchFromISP.sslOnly", true);" >> user.js
-echo "user_pref("mailnews.auto_config.fetchFromExchange.sslOnly", true);" >> user.js
-echo "user_pref("mailnews.auto_config.guess.sslOnly", true)" >> user.js       # sets fetch and guesses to SSL only
 
 
 
@@ -308,6 +258,7 @@ sed -i '/user_pref("browser.newtabpage.enabled", false/s/^/\/\//' user.js
 echo "Adding additional config lines..."
 
 # enable UserChrome customization
+echo "" >> user.js
 echo "//enable UserChrome.css modifications" >> user.js
 echo "user_pref("legacyUserProfileCustomizations.stylesheets", true);" >> user.js
 
@@ -322,6 +273,11 @@ echo "user_pref("legacyUserProfileCustomizations.stylesheets", true);" >> user.j
 
 
 ####### COPY USER.JS TO PROFILE #######
+#
+# This works with default profiles like "13a37b.default-profile"
+# If you somehow use a custom profile name, add it here:
+
+# cp user.js PROFILENAME/
 cp user.js *.*/
 
 
@@ -340,33 +296,33 @@ cp user.js *.*/
 # This is preferred over fetching them (you know, Thunderbird is actually a good program)
 # but by default there is no file for that
 
-echo "Downloading autoconfig archive"
-# try original source, may be updated
-curl --proto '=https' --tlsv1.2 --tlsv1.3 https://privacy-handbuch.de/download/mailprovider-db.tar.bz2 -o isp/mailprovider-db.tar.bz2 ||\
-# use my backup source
-curl --proto '=https' --tlsv1.2 --tlsv1.3 https://github.com/boredsquirrel/Thunderbird-hardening-automation/raw/main/mailprovider-db.tar.bz2 -P isp/mailprovider-db.tar.bz2 ||\
-# error
-notify-send "Thunderbird Hardening" "ERROR" "ISP Database could not be downloaded\nCheck $PWD/isp for contents"
-
-#unclear where this "isp" directory belongs, putting it directly to "isp" is just a guess
-# update interval also questionable
-
-# unpack the archive to the isp dir (creates it when not there)
-tar -xvf isp/mailprovider-db.tar.bz2 -C isp/ &&\
-# remove the archive (skipped, to verify if it is new)
-# rm -f isp/mailprovider-db.tar.bz2 &&\
-mv -f isp/mailprovider-db.tar.bz2 isp/mailprovider-db.tar.bz2.old
-
-# check if the database changed
-# true: no difference, false: difference
-/bin/sh -c 'diff isp/mailprovider-db.tar.bz2 isp/mailprovider-db.tar.bz2.old' &&\
-echo "The databases are equal" && rm -f mailprovider-db.tar.bz2 && notupdated=1 ||\
-notify-send -t 0 -a "Thunderbird Hardening" "Mailprovider Database Updated" "There were changes to the mail provider configurations.\n\n\nCheck $PWD/isp/ if you want to see them." &&\
-
-# move the contents from there (only specific files are used, increasing maintenance, possibly security)
-# TODO: add diff checker to only move new ones
-mv -f isp/mailprovider-db/*.xml isp/ &&\
-mv -f isp/mailprovider-db/*.br isp/ &&\
-mv -f isp/mailprovider-db/*.ar isp/ &&\
-# delete the directory
-rm -rf isp/mailprovider-db
+# echo "Downloading autoconfig archive"
+# # try original source, may be updated
+# curl --proto '=https' --tlsv1.2 --tlsv1.3 https://privacy-handbuch.de/download/mailprovider-db.tar.bz2 -o isp/mailprovider-db.tar.bz2 ||\
+# # use my backup source
+# curl --proto '=https' --tlsv1.2 --tlsv1.3 https://github.com/boredsquirrel/Thunderbird-hardening-automation/raw/main/mailprovider-db.tar.bz2 -P isp/mailprovider-db.tar.bz2 ||\
+# # error
+# notify-send "Thunderbird Hardening" "ERROR" "ISP Database could not be downloaded\nCheck $PWD/isp for contents"
+#
+# #unclear where this "isp" directory belongs, putting it directly to "isp" is just a guess
+# # update interval also questionable
+#
+# # unpack the archive to the isp dir (creates it when not there)
+# tar -xvf isp/mailprovider-db.tar.bz2 -C isp/ &&\
+# # remove the archive (skipped, to verify if it is new)
+# # rm -f isp/mailprovider-db.tar.bz2 &&\
+# mv -f isp/mailprovider-db.tar.bz2 isp/mailprovider-db.tar.bz2.old
+#
+# # check if the database changed
+# # true: no difference, false: difference
+# /bin/sh -c 'diff isp/mailprovider-db.tar.bz2 isp/mailprovider-db.tar.bz2.old' &&\
+# echo "The databases are equal" && rm -f mailprovider-db.tar.bz2 && notupdated=1 ||\
+# notify-send -t 0 -a "Thunderbird Hardening" "Mailprovider Database Updated" "There were changes to the mail provider configurations.\n\n\nCheck $PWD/isp/ if you want to see them." &&\
+#
+# # move the contents from there (only specific files are used, increasing maintenance, possibly security)
+# # TODO: add diff checker to only move new ones
+# mv -f isp/mailprovider-db/*.xml isp/ &&\
+# mv -f isp/mailprovider-db/*.br isp/ &&\
+# mv -f isp/mailprovider-db/*.ar isp/ &&\
+# # delete the directory
+# rm -rf isp/mailprovider-db
