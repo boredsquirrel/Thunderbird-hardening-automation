@@ -45,5 +45,7 @@ EOF
 
 # reload systemd daemon for this user
 systemctl --user daemon-reload
+# enable service for this user
+systemctl --user enable --now thunderbird-hardening-overwrite.service
 
 notify-send -a "Thunderbird Hardening" "Setup completed" "Your Thunderbird configurations is set up\nand will be automatically updated every 48 hours."
